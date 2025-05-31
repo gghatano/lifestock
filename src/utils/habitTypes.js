@@ -6,82 +6,72 @@ export const habitTypes = {
     lifeDays: 0.02, 
     medicalSavings: 60,
     focusHours: 0.5,
-    description: '30分の運動'
+    description: '30分程の運動',
+    detail: 'ウォーキング、ジョギング、筋トレなど'
   },
-  floss: { 
-    name: 'フロス', 
+  dental: { 
+    name: 'オーラルケア', 
     icon: '🦷',
     category: 'health',
-    lifeDays: 0.01, 
-    medicalSavings: 12,
-    description: '歯間ケア'
+    lifeDays: 0.015, 
+    medicalSavings: 25,
+    description: '歯磨き・フロス・歯間ブラシ',
+    detail: '朝晩の歯磨き+フロス+歯間ブラシ'
   },
   study: { 
     name: '勉強', 
     icon: '📚',
     category: 'learning',
     skillAssets: 84,
-    focusHours: 1,
-    description: '1時間の学習'
-  },
-  noAlcohol: { 
-    name: '禁酒', 
-    icon: '🚫🍺',
-    category: 'health',
-    lifeDays: 0.015,
-    medicalSavings: 40,
-    description: 'アルコール摂取なし'
-  },
-  limitPhone: { 
-    name: 'スマホ制限', 
-    icon: '📱',
-    category: 'focus',
     focusHours: 0.5,
-    skillAssets: 25,
-    description: 'スマホ利用時間制限'
-  },
-  sleep8h: { 
-    name: '8時間睡眠', 
-    icon: '😴',
-    category: 'health',
-    lifeDays: 0.03,
-    medicalSavings: 80,
-    focusHours: 2,
-    description: '8時間の質の良い睡眠'
-  },
-  meditation: { 
-    name: '瞑想', 
-    icon: '🧘‍♂️',
-    category: 'mental',
-    lifeDays: 0.01,
-    medicalSavings: 30,
-    focusHours: 1,
-    description: '10-20分の瞑想'
+    description: '30分ほどの勉強',
+    detail: '新しいスキル習得、資格勉強など'
   },
   reading: { 
     name: '読書', 
     icon: '📖',
     category: 'learning',
     skillAssets: 50,
-    focusHours: 1,
-    description: '30分以上の読書'
+    focusHours: 0.5,
+    description: '30分程の読書',
+    detail: 'ビジネス書、小説、専門書など'
   },
-  walk: {
-    name: '散歩',
-    icon: '🚶‍♂️',
+  sleep: { 
+    name: '良質な睡眠', 
+    icon: '😴',
     category: 'health',
-    lifeDays: 0.01,
-    medicalSavings: 30,
-    focusHours: 0.3,
-    description: '30分の散歩'
+    lifeDays: 0.04,
+    medicalSavings: 80,
+    focusHours: 1.5,
+    description: '7.5時間の睡眠',
+    detail: '質の良い7.5時間睡眠'
   },
-  hydration: {
-    name: '水分補給',
-    icon: '💧',
+  noAlcohol: { 
+    name: '禁酒', 
+    icon: '🚫🍺',
     category: 'health',
-    lifeDays: 0.005,
-    medicalSavings: 10,
-    description: '適切な水分摂取（2L以上）'
+    lifeDays: 0.02,
+    medicalSavings: 45,
+    description: 'アルコール摂取なし',
+    detail: '1日アルコールを摂取しない'
+  },
+  noSmoking: {
+    name: '禁煙',
+    icon: '🚭',
+    category: 'health',
+    lifeDays: 0.05,
+    medicalSavings: 120,
+    description: 'タバコを吸わない',
+    detail: '1日タバコを吸わずに過ごす'
+  },
+  limitPhone: { 
+    name: 'スマホ制限', 
+    icon: '📱',
+    category: 'focus',
+    focusHours: 1.0,
+    skillAssets: 30,
+    description: 'スマホ利用時間制限',
+    detail: 'SNS、ゲームなどを制限'
   }
 };
 
@@ -110,4 +100,9 @@ export const calculateTotalAssetValue = (assets) => {
   return (assets.medicalSavings || 0) + 
          (assets.skillAssets || 0) + 
          (assets.focusHours || 0) * 100;
+};
+
+// 健康寿命を分単位で計算
+export const calculateLifeMinutes = (lifeDays) => {
+  return Math.round(lifeDays * 24 * 60); // 日 → 分
 };

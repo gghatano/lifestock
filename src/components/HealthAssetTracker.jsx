@@ -1,15 +1,21 @@
 import React, { useState } from 'react';
-import { Plus, TrendingUp, Calendar, Award, Heart, Brain, DollarSign, Clock, LogOut, User } from 'lucide-react';
+import { Plus, TrendingUp, Calendar, Award, Heart, Brain, DollarSign, Clock, LogOut, User, ArrowRight, CheckCircle } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { useHabits } from '../hooks/useHabits';
-import { habitTypes, calculateTotalAssetValue } from '../utils/habitTypes';
+import { useMockHabits } from '../hooks/useMockData';
+import { habitTypes, calculateTotalAssetValue, calculateLifeMinutes } from '../utils/habitTypes';
 
 const HealthAssetTracker = ({ user, onLogout }) => {
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const [activeTab, setActiveTab] = useState('record');
   const [pendingHabits, setPendingHabits] = useState([]);
   const [registering, setRegistering] = useState(false);
+  const [showSuccessMessage, setShowSuccessMessage] = useState(false);
+  const [selectedStatCategory, setSelectedStatCategory] = useState('all'); // 統計フィルター
 
+  // モックモードとFirebaseモードの切り替え
+  const isMockMode = import.meta.env.VITE_MOCK_MODE === 'true';
+  const habitsHook = isMockMode ? useMockHabits : useHabits;
   const { 
     habits, 
     assets, 
@@ -19,10 +25,21 @@ const HealthAssetTracker = ({ user, onLogout }) => {
     getHabitsForDate, 
     getStats, 
     getAssetTrendData 
-  } = useHabits(user?.uid);
+  } = habitsHook(user?.uid);
 
-  // 保留中の習慣を追加
+  // 今日実行済みの習慣タイプを取得
+  const todayCompletedHabits = getHabitsForDate(selectedDate).map(h => h.type);
+
+  // 保留中の習慣を追加（1日1回制限）
   const addPendingHabit = (habitType, duration = 1) => {
+    // 既に今日実行済みか保留中かチェック
+    const isAlreadyCompleted = todayCompletedHabits.includes(habitType);
+    const isAlreadyPending = pendingHabits.some(h => h.type === habitType);
+    
+    if (isAlreadyCompleted || isAlreadyPending) {
+      return; // 何もしない
+    }
+
     const habit = {
       id: Date.now(),
       type: habitType,
@@ -45,6 +62,10 @@ const HealthAssetTracker = ({ user, onLogout }) => {
       setRegistering(true);
       await addHabits(pendingHabits);
       setPendingHabits([]);
+      
+      // 成功メッセージを表示
+      setShowSuccessMessage(true);
+      setTimeout(() => setShowSuccessMessage(false), 3000);
     } catch (error) {
       console.error('Registration failed:', error);
     } finally {
@@ -56,6 +77,57 @@ const HealthAssetTracker = ({ user, onLogout }) => {
   const stats = getStats();
   const trendData = getAssetTrendData();
 
+  // 今日の累積健康寿命延伸（分）
+  const todayLifeMinutes = todayHabits.reduce((sum, habit) => {
+    return sum + calculateLifeMinutes(habit.value?.lifeDays || 0);
+  }, 0);
+
+  // 今日の累積資産増加
+  const todayAssetIncrease = todayHabits.reduce((sum, habit) => {
+    return sum + calculateTotalAssetValue(habit.value || {});
+  }, 0);
+
+  // 統計データのフィルタリング
+  const getFilteredStats = () => {
+    if (selectedStatCategory === 'all') {
+      return {
+        habits: habits,
+        title: '全習慣',
+        data: trendData
+      };
+    }
+    
+    const filteredHabits = habits.filter(h => h.type === selectedStatCategory);
+    const habitConfig = habitTypes[selectedStatCategory];
+    
+    return {
+      habits: filteredHabits,
+      title: habitConfig?.name || '選択された習慣',
+      data: getHabitSpecificTrendData(selectedStatCategory)
+    };
+  };
+
+  // 特定習慣の推移データ生成
+  const getHabitSpecificTrendData = (habitType) => {
+    const filteredHabits = habits.filter(h => h.type === habitType);
+    const dateGroups = {};
+    let cumulativeCount = 0;
+    
+    const sortedHabits = [...filteredHabits].sort((a, b) => new Date(a.date) - new Date(b.date));
+    
+    sortedHabits.forEach(habit => {
+      const date = habit.date;
+      cumulativeCount++;
+      dateGroups[date] = cumulativeCount;
+    });
+
+    return Object.entries(dateGroups).map(([date, count]) => ({
+      date: new Date(date).toLocaleDateString('ja-JP', { month: 'numeric', day: 'numeric' }),
+      totalValue: count,
+      count: count
+    }));
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-50 to-purple-50 flex items-center justify-center">
@@ -66,6 +138,8 @@ const HealthAssetTracker = ({ user, onLogout }) => {
       </div>
     );
   }
+
+  const filteredStats = getFilteredStats();
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-purple-50 p-4">
@@ -93,10 +167,28 @@ const HealthAssetTracker = ({ user, onLogout }) => {
             </div>
           </div>
           <p className="opacity-90">今日の良い行動が、未来の財産になる</p>
-          <p className="text-sm opacity-75 mt-1">
-            こんにちは、{user?.displayName?.split(' ')[0] || 'ユーザー'}さん
-          </p>
+          <div className="flex items-center justify-between mt-1">
+            <p className="text-sm opacity-75">
+              こんにちは、{user?.displayName?.split(' ')[0] || 'ユーザー'}さん
+            </p>
+            {isMockMode && (
+              <span className="text-xs bg-yellow-400 text-yellow-900 px-2 py-1 rounded-full">
+                デモモード
+              </span>
+            )}
+          </div>
         </div>
+
+        {/* 成功メッセージ */}
+        {showSuccessMessage && (
+          <div className="bg-green-500 text-white p-4 text-center">
+            <div className="flex items-center justify-center space-x-2">
+              <CheckCircle size={20} />
+              <span className="font-bold">今日もお疲れ様でした！</span>
+            </div>
+            <p className="text-sm mt-1">良い習慣の積み重ねが未来を変えます✨</p>
+          </div>
+        )}
 
         {/* エラー表示 */}
         {error && (
@@ -154,16 +246,30 @@ const HealthAssetTracker = ({ user, onLogout }) => {
 
             {/* 習慣ボタン */}
             <div className="grid grid-cols-2 gap-3 mb-6">
-              {Object.entries(habitTypes).map(([key, habit]) => (
-                <button
-                  key={key}
-                  onClick={() => addPendingHabit(key)}
-                  className="btn-secondary"
-                >
-                  <div className="text-2xl mb-1">{habit.icon}</div>
-                  <div className="text-sm">{habit.name}</div>
-                </button>
-              ))}
+              {Object.entries(habitTypes).map(([key, habit]) => {
+                const isCompleted = todayCompletedHabits.includes(key);
+                const isPending = pendingHabits.some(h => h.type === key);
+                const isDisabled = isCompleted || isPending;
+                
+                return (
+                  <button
+                    key={key}
+                    onClick={() => addPendingHabit(key)}
+                    disabled={isDisabled}
+                    className={`p-4 rounded-xl font-medium shadow-lg transform transition-all ${
+                      isDisabled 
+                        ? 'bg-gray-300 text-gray-500 cursor-not-allowed' 
+                        : 'bg-gradient-to-r from-green-400 to-green-500 hover:from-green-500 hover:to-green-600 text-white hover:scale-105 active:scale-95'
+                    }`}
+                  >
+                    <div className="text-2xl mb-1">
+                      {isCompleted ? '✅' : habit.icon}
+                    </div>
+                    <div className="text-sm">{habit.name}</div>
+                    <div className="text-xs mt-1 opacity-80">{habit.description}</div>
+                  </button>
+                );
+              })}
             </div>
 
             {/* 保留中の習慣 */}
@@ -177,11 +283,14 @@ const HealthAssetTracker = ({ user, onLogout }) => {
                       <div key={habit.id} className="flex items-center justify-between bg-white p-3 rounded-lg">
                         <div className="flex items-center">
                           <span className="text-xl mr-3">{config.icon}</span>
-                          <span className="font-medium">{config.name}</span>
+                          <div>
+                            <div className="font-medium">{config.name}</div>
+                            <div className="text-xs text-gray-500">{config.detail}</div>
+                          </div>
                         </div>
                         <button
                           onClick={() => removePendingHabit(habit.id)}
-                          className="text-red-500 hover:text-red-700 font-bold"
+                          className="text-red-500 hover:text-red-700 font-bold text-lg"
                         >
                           ×
                         </button>
@@ -192,30 +301,40 @@ const HealthAssetTracker = ({ user, onLogout }) => {
               </div>
             )}
 
-            {/* 今日の記録 */}
+            {/* 今日の実績 */}
             <div className="bg-gray-50 rounded-xl p-4 mb-6">
               <h3 className="font-bold text-gray-800 mb-3">今日の実績</h3>
               {todayHabits.length === 0 ? (
                 <p className="text-gray-500 text-center py-4">まだ記録がありません</p>
               ) : (
-                <div className="space-y-2">
-                  {todayHabits.map((habit) => {
-                    const config = habitTypes[habit.type];
-                    return (
-                      <div key={habit.id} className="flex items-center justify-between bg-white p-3 rounded-lg">
-                        <div className="flex items-center">
-                          <span className="text-xl mr-3">{config.icon}</span>
-                          <span className="font-medium">{config.name}</span>
+                <>
+                  <div className="bg-blue-50 rounded-lg p-3 mb-3 text-center">
+                    <div className="text-blue-800 font-bold text-lg">
+                      健康寿命 +{todayLifeMinutes}分
+                    </div>
+                    <div className="text-blue-600 text-sm">今日の努力で延びた寿命</div>
+                  </div>
+                  <div className="space-y-2">
+                    {todayHabits.map((habit) => {
+                      const config = habitTypes[habit.type];
+                      return (
+                        <div key={habit.id} className="flex items-center justify-between bg-white p-3 rounded-lg">
+                          <div className="flex items-center">
+                            <span className="text-xl mr-3">{config.icon}</span>
+                            <span className="font-medium">{config.name}</span>
+                          </div>
+                          <div className="text-right text-sm text-gray-600">
+                            {habit.value?.lifeDays && (
+                              <div>健康寿命+{calculateLifeMinutes(habit.value.lifeDays)}分</div>
+                            )}
+                            {habit.value?.medicalSavings && <div>医療費-¥{habit.value.medicalSavings}</div>}
+                            {habit.value?.skillAssets && <div>スキル+¥{habit.value.skillAssets}</div>}
+                          </div>
                         </div>
-                        <div className="text-right text-sm text-gray-600">
-                          {habit.value?.lifeDays && <div>寿命+{habit.value.lifeDays}日</div>}
-                          {habit.value?.medicalSavings && <div>医療費-¥{habit.value.medicalSavings}</div>}
-                          {habit.value?.skillAssets && <div>スキル+¥{habit.value.skillAssets}</div>}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
+                      );
+                    })}
+                  </div>
+                </>
               )}
             </div>
 
@@ -224,7 +343,7 @@ const HealthAssetTracker = ({ user, onLogout }) => {
               <button
                 onClick={registerHabits}
                 disabled={registering}
-                className="w-full btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
+                className="w-full btn-primary disabled:opacity-50 disabled:cursor-not-allowed mb-4"
               >
                 {registering ? (
                   <div className="flex items-center justify-center space-x-2">
@@ -236,6 +355,17 @@ const HealthAssetTracker = ({ user, onLogout }) => {
                 )}
               </button>
             )}
+
+            {/* 資産確認ボタン */}
+            {todayHabits.length > 0 && (
+              <button
+                onClick={() => setActiveTab('assets')}
+                className="w-full bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white font-bold py-4 px-6 rounded-xl shadow-lg transform transition-all hover:scale-105 active:scale-95 flex items-center justify-center space-x-2"
+              >
+                <span>未来資産を確認！</span>
+                <ArrowRight size={20} />
+              </button>
+            )}
           </div>
         )}
 
@@ -245,7 +375,7 @@ const HealthAssetTracker = ({ user, onLogout }) => {
             <h2 className="text-xl font-bold text-gray-800 mb-6">あなたの未来資産</h2>
             
             {/* 総資産価値 */}
-            <div className="mb-6 p-6 bg-gradient-to-r from-yellow-400 to-orange-500 rounded-xl text-white text-center">
+            <div className="mb-6 p-6 bg-gradient-to-r from-yellow-400 to-orange-500 rounded-xl text-white text-center relative">
               <div className="text-lg font-bold mb-2">総資産価値</div>
               <div className="text-4xl font-bold">
                 ¥{calculateTotalAssetValue(assets).toLocaleString()}
@@ -253,43 +383,68 @@ const HealthAssetTracker = ({ user, onLogout }) => {
               <div className="text-sm opacity-90 mt-2">
                 あなたの努力が生み出した価値
               </div>
+              {todayAssetIncrease > 0 && (
+                <div className="absolute top-2 right-2 bg-green-500 text-white text-xs px-2 py-1 rounded-full">
+                  +¥{todayAssetIncrease.toLocaleString()}
+                </div>
+              )}
             </div>
             
             <div className="space-y-4">
-              <div className="asset-card bg-gradient-to-r from-red-400 to-pink-500">
+              <div className="asset-card bg-gradient-to-r from-red-400 to-pink-500 relative">
                 <div className="flex items-center mb-2">
                   <Heart className="mr-2" size={24} />
                   <span className="font-bold">健康寿命</span>
                 </div>
-                <div className="text-3xl font-bold">+{(assets.lifeDays || 0).toFixed(1)}日</div>
+                <div className="text-3xl font-bold">+{calculateLifeMinutes(assets.lifeDays || 0)}分</div>
                 <div className="text-sm opacity-90">習慣による寿命延伸</div>
+                {todayLifeMinutes > 0 && (
+                  <div className="absolute top-2 right-2 bg-green-500 text-white text-xs px-2 py-1 rounded-full">
+                    +{todayLifeMinutes}分
+                  </div>
+                )}
               </div>
 
-              <div className="asset-card bg-gradient-to-r from-green-400 to-green-500">
+              <div className="asset-card bg-gradient-to-r from-green-400 to-green-500 relative">
                 <div className="flex items-center mb-2">
                   <DollarSign className="mr-2" size={24} />
                   <span className="font-bold">医療費削減</span>
                 </div>
                 <div className="text-3xl font-bold">¥{(assets.medicalSavings || 0).toLocaleString()}</div>
                 <div className="text-sm opacity-90">予防効果による節約</div>
+                {todayHabits.some(h => h.value?.medicalSavings) && (
+                  <div className="absolute top-2 right-2 bg-green-500 text-white text-xs px-2 py-1 rounded-full">
+                    +¥{todayHabits.reduce((sum, h) => sum + (h.value?.medicalSavings || 0), 0)}
+                  </div>
+                )}
               </div>
 
-              <div className="asset-card bg-gradient-to-r from-blue-400 to-blue-500">
+              <div className="asset-card bg-gradient-to-r from-blue-400 to-blue-500 relative">
                 <div className="flex items-center mb-2">
                   <Brain className="mr-2" size={24} />
                   <span className="font-bold">スキル資産</span>
                 </div>
                 <div className="text-3xl font-bold">¥{(assets.skillAssets || 0).toLocaleString()}</div>
                 <div className="text-sm opacity-90">将来収入期待値</div>
+                {todayHabits.some(h => h.value?.skillAssets) && (
+                  <div className="absolute top-2 right-2 bg-green-500 text-white text-xs px-2 py-1 rounded-full">
+                    +¥{todayHabits.reduce((sum, h) => sum + (h.value?.skillAssets || 0), 0)}
+                  </div>
+                )}
               </div>
 
-              <div className="asset-card bg-gradient-to-r from-purple-400 to-purple-500">
+              <div className="asset-card bg-gradient-to-r from-purple-400 to-purple-500 relative">
                 <div className="flex items-center mb-2">
                   <Clock className="mr-2" size={24} />
                   <span className="font-bold">集中時間資産</span>
                 </div>
                 <div className="text-3xl font-bold">{(assets.focusHours || 0).toFixed(1)}時間</div>
                 <div className="text-sm opacity-90">蓄積された集中力</div>
+                {todayHabits.some(h => h.value?.focusHours) && (
+                  <div className="absolute top-2 right-2 bg-green-500 text-white text-xs px-2 py-1 rounded-full">
+                    +{todayHabits.reduce((sum, h) => sum + (h.value?.focusHours || 0), 0).toFixed(1)}h
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -300,13 +455,30 @@ const HealthAssetTracker = ({ user, onLogout }) => {
           <div className="p-6">
             <h2 className="text-xl font-bold text-gray-800 mb-6">継続統計</h2>
             
+            {/* フィルター選択 */}
+            <div className="mb-6">
+              <label className="block text-sm font-medium text-gray-700 mb-2">表示する項目</label>
+              <select
+                value={selectedStatCategory}
+                onChange={(e) => setSelectedStatCategory(e.target.value)}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+              >
+                <option value="all">全習慣の資産価値</option>
+                {Object.entries(habitTypes).map(([key, habit]) => (
+                  <option key={key} value={key}>{habit.name}の実行回数</option>
+                ))}
+              </select>
+            </div>
+            
             {/* 資産推移グラフ */}
-            {trendData.length > 1 && (
+            {filteredStats.data.length > 1 && (
               <div className="mb-6 bg-white rounded-xl p-4 border border-gray-200">
-                <h3 className="font-bold text-gray-800 mb-4">資産価値の推移</h3>
+                <h3 className="font-bold text-gray-800 mb-4">
+                  {filteredStats.title}の推移
+                </h3>
                 <div className="h-48">
                   <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={trendData}>
+                    <LineChart data={filteredStats.data}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                       <XAxis 
                         dataKey="date" 
@@ -316,10 +488,16 @@ const HealthAssetTracker = ({ user, onLogout }) => {
                       <YAxis 
                         stroke="#666"
                         fontSize={12}
-                        tickFormatter={(value) => `¥${Math.floor(value/1000)}k`}
+                        tickFormatter={selectedStatCategory === 'all' 
+                          ? (value) => `¥${value.toLocaleString()}`
+                          : (value) => `${value}回`
+                        }
                       />
                       <Tooltip 
-                        formatter={(value) => [`¥${value.toLocaleString()}`, '総資産価値']}
+                        formatter={selectedStatCategory === 'all'
+                          ? (value) => [`¥${value.toLocaleString()}`, '総資産価値']
+                          : (value) => [`${value}回`, '実行回数']
+                        }
                         labelStyle={{ color: '#333' }}
                       />
                       <Line 
@@ -336,43 +514,55 @@ const HealthAssetTracker = ({ user, onLogout }) => {
               </div>
             )}
             
+            {/* 統計サマリー */}
             <div className="grid grid-cols-2 gap-4 mb-6">
               <div className="bg-blue-50 p-4 rounded-xl text-center">
-                <div className="text-2xl font-bold text-blue-600">{stats.totalDays}</div>
+                <div className="text-2xl font-bold text-blue-600">
+                  {selectedStatCategory === 'all' ? stats.totalDays : new Set(filteredStats.habits.map(h => h.date)).size}
+                </div>
                 <div className="text-sm text-blue-800">継続日数</div>
               </div>
               <div className="bg-green-50 p-4 rounded-xl text-center">
-                <div className="text-2xl font-bold text-green-600">{stats.totalHabits}</div>
+                <div className="text-2xl font-bold text-green-600">
+                  {filteredStats.habits.length}
+                </div>
                 <div className="text-sm text-green-800">総実行回数</div>
               </div>
             </div>
 
             <div className="bg-purple-50 p-4 rounded-xl text-center mb-6">
-              <div className="text-2xl font-bold text-purple-600">{stats.avgHabitsPerDay}</div>
+              <div className="text-2xl font-bold text-purple-600">
+                {selectedStatCategory === 'all' 
+                  ? stats.avgHabitsPerDay 
+                  : (filteredStats.habits.length / Math.max(new Set(filteredStats.habits.map(h => h.date)).size, 1)).toFixed(1)
+                }
+              </div>
               <div className="text-sm text-purple-800">1日平均実行数</div>
             </div>
 
-            {/* 習慣別実行回数 */}
-            <div className="bg-gray-50 rounded-xl p-4">
-              <h3 className="font-bold text-gray-800 mb-3">習慣別実行回数</h3>
-              {Object.entries(habitTypes).map(([key, habit]) => {
-                const count = habits.filter(h => h.type === key).length;
-                return count > 0 ? (
-                  <div key={key} className="flex items-center justify-between py-2">
-                    <div className="flex items-center">
-                      <span className="text-lg mr-2">{habit.icon}</span>
-                      <span>{habit.name}</span>
+            {/* 習慣別実行回数（全習慣選択時のみ） */}
+            {selectedStatCategory === 'all' && (
+              <div className="bg-gray-50 rounded-xl p-4">
+                <h3 className="font-bold text-gray-800 mb-3">習慣別実行回数</h3>
+                {Object.entries(habitTypes).map(([key, habit]) => {
+                  const count = habits.filter(h => h.type === key).length;
+                  return count > 0 ? (
+                    <div key={key} className="flex items-center justify-between py-2">
+                      <div className="flex items-center">
+                        <span className="text-lg mr-2">{habit.icon}</span>
+                        <span>{habit.name}</span>
+                      </div>
+                      <span className="font-bold text-blue-600">{count}回</span>
                     </div>
-                    <span className="font-bold text-blue-600">{count}回</span>
-                  </div>
-                ) : null;
-              })}
-              {habits.length === 0 && (
-                <p className="text-gray-500 text-center py-4">
-                  習慣を記録して統計を確認しましょう
-                </p>
-              )}
-            </div>
+                  ) : null;
+                })}
+                {habits.length === 0 && (
+                  <p className="text-gray-500 text-center py-4">
+                    習慣を記録して統計を確認しましょう
+                  </p>
+                )}
+              </div>
+            )}
           </div>
         )}
       </div>

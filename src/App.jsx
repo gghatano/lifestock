@@ -1,10 +1,14 @@
 import React from 'react';
 import { useAuth } from './hooks/useAuth';
+import { useMockAuth } from './hooks/useMockData';
 import LoginScreen from './components/LoginScreen';
 import HealthAssetTracker from './components/HealthAssetTracker';
 
 function App() {
-  const { user, loading, error, signInWithGoogle, logout } = useAuth();
+  // モックモードとFirebaseモードの切り替え
+  const isMockMode = import.meta.env.VITE_MOCK_MODE === 'true';
+  const authHook = isMockMode ? useMockAuth : useAuth;
+  const { user, loading, error, signInWithGoogle, logout } = authHook();
 
   if (loading) {
     return (
