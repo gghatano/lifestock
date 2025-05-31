@@ -9,9 +9,10 @@ const HealthAssetTracker = ({ user, onLogout }) => {
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const [activeTab, setActiveTab] = useState('record');
   const [pendingHabits, setPendingHabits] = useState([]);
+  const [pendingRemovals, setPendingRemovals] = useState([]);
   const [registering, setRegistering] = useState(false);
   const [showSuccessMessage, setShowSuccessMessage] = useState(false);
-  const [selectedStatCategory, setSelectedStatCategory] = useState('all'); // 統計フィルター
+  const [selectedStatCategory, setSelectedStatCategory] = useState('all');
 
   // モックモードとFirebaseモードの切り替え
   const isMockMode = import.meta.env.VITE_MOCK_MODE === 'true';
@@ -29,17 +30,33 @@ const HealthAssetTracker = ({ user, onLogout }) => {
 
   // 今日実行済みの習慣タイプを取得
   const todayCompletedHabits = getHabitsForDate(selectedDate).map(h => h.type);
+  const todayHabitRecords = getHabitsForDate(selectedDate);
 
-  // 保留中の習慣を追加（1日1回制限）
-  const addPendingHabit = (habitType, duration = 1) => {
-    // 既に今日実行済みか保留中かチェック
-    const isAlreadyCompleted = todayCompletedHabits.includes(habitType);
-    const isAlreadyPending = pendingHabits.some(h => h.type === habitType);
-    
-    if (isAlreadyCompleted || isAlreadyPending) {
-      return; // 何もしない
+  // 習慣のON/OFFを切り替え（常時編集モード）
+  const toggleHabit = (habitType) => {
+    const isCompleted = todayCompletedHabits.includes(habitType);
+    const isPendingRemoval = pendingRemovals.some(r => r.type === habitType);
+    const isPendingAdd = pendingHabits.some(h => h.type === habitType);
+
+    if (isCompleted && !isPendingRemoval) {
+      // 完了済みを削除待ちに
+      removeCompletedHabit(habitType);
+    } else if (isPendingRemoval) {
+      // 削除待ちを取消
+      const habit = pendingRemovals.find(r => r.type === habitType);
+      if (habit) cancelRemoval(habit.id);
+    } else if (isPendingAdd) {
+      // 追加待ちを取消
+      const habit = pendingHabits.find(h => h.type === habitType);
+      if (habit) removePendingHabit(habit.id);
+    } else {
+      // 新しく追加
+      addPendingHabit(habitType);
     }
+  };
 
+  // 保留中の習慣を追加
+  const addPendingHabit = (habitType, duration = 1) => {
     const habit = {
       id: Date.now(),
       type: habitType,
@@ -49,19 +66,48 @@ const HealthAssetTracker = ({ user, onLogout }) => {
     setPendingHabits(prev => [...prev, habit]);
   };
 
+  // 完了済み習慣を削除（削除待ちリストに追加）
+  const removeCompletedHabit = (habitType) => {
+    const habitToRemove = todayHabitRecords.find(h => h.type === habitType);
+    if (habitToRemove) {
+      setPendingRemovals(prev => [...prev, habitToRemove]);
+    }
+  };
+
+  // 削除待ちから取り消し
+  const cancelRemoval = (habitId) => {
+    setPendingRemovals(prev => prev.filter(h => h.id !== habitId));
+  };
+
   // 保留中の習慣を削除
   const removePendingHabit = (habitId) => {
     setPendingHabits(prev => prev.filter(h => h.id !== habitId));
   };
 
-  // 習慣を登録
-  const registerHabits = async () => {
-    if (pendingHabits.length === 0) return;
+  // 習慣を登録/削除
+  const registerChanges = async () => {
+    if (pendingHabits.length === 0 && pendingRemovals.length === 0) return;
 
     try {
       setRegistering(true);
-      await addHabits(pendingHabits);
+      
+      // 新しい習慣を追加
+      if (pendingHabits.length > 0) {
+        await addHabits(pendingHabits);
+      }
+      
+      // 習慣を削除（モックモードではコンソールログのみ）
+      if (pendingRemovals.length > 0) {
+        if (isMockMode) {
+          console.log('モック: 習慣を削除しました', pendingRemovals);
+        } else {
+          // Firebaseの場合は実際の削除処理を実装
+          // await removeHabits(pendingRemovals);
+        }
+      }
+      
       setPendingHabits([]);
+      setPendingRemovals([]);
       
       // 成功メッセージを表示
       setShowSuccessMessage(true);
@@ -244,60 +290,84 @@ const HealthAssetTracker = ({ user, onLogout }) => {
               />
             </div>
 
+            {/* 使い方説明 */}
+            <div className="bg-blue-50 rounded-lg p-3 mb-4 border border-blue-200">
+              <p className="text-blue-800 text-sm">
+                💡 <strong>操作方法</strong>: 習慣ボタンをタップしてON/OFFを切り替えできます。変更後は「変更を登録」で確定してください。
+              </p>
+            </div>
+
             {/* 習慣ボタン */}
             <div className="grid grid-cols-2 gap-3 mb-6">
               {Object.entries(habitTypes).map(([key, habit]) => {
-                const isCompleted = todayCompletedHabits.includes(key);
+                const isCompleted = todayCompletedHabits.includes(key) && !pendingRemovals.some(r => r.type === key);
                 const isPending = pendingHabits.some(h => h.type === key);
-                const isDisabled = isCompleted || isPending;
+                const isPendingRemoval = pendingRemovals.some(r => r.type === key);
+                
+                // 状態に応じたスタイルを決定
+                const getButtonStyle = () => {
+                  if (isPendingRemoval) {
+                    return 'bg-red-200 text-red-700 border-2 border-red-400';
+                  } else if (isCompleted || isPending) {
+                    return 'bg-green-200 text-green-700 border-2 border-green-400';
+                  } else {
+                    return 'bg-gray-100 text-gray-600 border-2 border-gray-300 hover:bg-gray-200';
+                  }
+                };
+
+                const getIcon = () => {
+                  if (isPendingRemoval) return '❌';
+                  if (isCompleted || isPending) return '✅';
+                  return habit.icon;
+                };
+
+                const getStatusText = () => {
+                  if (isPendingRemoval) return '削除予定';
+                  if (isPending) return '追加予定';
+                  if (isCompleted) return '完了済み';
+                  return habit.description;
+                };
                 
                 return (
                   <button
                     key={key}
-                    onClick={() => addPendingHabit(key)}
-                    disabled={isDisabled}
-                    className={`p-4 rounded-xl font-medium shadow-lg transform transition-all ${
-                      isDisabled 
-                        ? 'bg-gray-300 text-gray-500 cursor-not-allowed' 
-                        : 'bg-gradient-to-r from-green-400 to-green-500 hover:from-green-500 hover:to-green-600 text-white hover:scale-105 active:scale-95'
-                    }`}
+                    onClick={() => toggleHabit(key)}
+                    className={`p-4 rounded-xl font-medium shadow-lg transform transition-all hover:scale-105 active:scale-95 ${getButtonStyle()}`}
                   >
                     <div className="text-2xl mb-1">
-                      {isCompleted ? '✅' : habit.icon}
+                      {getIcon()}
                     </div>
                     <div className="text-sm">{habit.name}</div>
-                    <div className="text-xs mt-1 opacity-80">{habit.description}</div>
+                    <div className="text-xs mt-1 opacity-80">
+                      {getStatusText()}
+                    </div>
                   </button>
                 );
               })}
             </div>
 
-            {/* 保留中の習慣 */}
-            {pendingHabits.length > 0 && (
+            {/* 変更概要 */}
+            {(pendingHabits.length > 0 || pendingRemovals.length > 0) && (
               <div className="bg-yellow-50 rounded-xl p-4 mb-6 border border-yellow-200">
-                <h3 className="font-bold text-yellow-800 mb-3">登録待ちの習慣</h3>
-                <div className="space-y-2">
-                  {pendingHabits.map((habit) => {
-                    const config = habitTypes[habit.type];
-                    return (
-                      <div key={habit.id} className="flex items-center justify-between bg-white p-3 rounded-lg">
-                        <div className="flex items-center">
-                          <span className="text-xl mr-3">{config.icon}</span>
-                          <div>
-                            <div className="font-medium">{config.name}</div>
-                            <div className="text-xs text-gray-500">{config.detail}</div>
-                          </div>
-                        </div>
-                        <button
-                          onClick={() => removePendingHabit(habit.id)}
-                          className="text-red-500 hover:text-red-700 font-bold text-lg"
-                        >
-                          ×
-                        </button>
-                      </div>
-                    );
-                  })}
-                </div>
+                <h3 className="font-bold text-yellow-800 mb-3">変更内容</h3>
+                
+                {pendingHabits.length > 0 && (
+                  <div className="mb-2">
+                    <h4 className="text-green-700 font-medium mb-1">追加予定 ({pendingHabits.length}件)</h4>
+                    <div className="text-sm text-green-600">
+                      {pendingHabits.map(h => habitTypes[h.type].name).join(', ')}
+                    </div>
+                  </div>
+                )}
+                
+                {pendingRemovals.length > 0 && (
+                  <div>
+                    <h4 className="text-red-700 font-medium mb-1">削除予定 ({pendingRemovals.length}件)</h4>
+                    <div className="text-sm text-red-600">
+                      {pendingRemovals.map(h => habitTypes[h.type].name).join(', ')}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
@@ -339,19 +409,19 @@ const HealthAssetTracker = ({ user, onLogout }) => {
             </div>
 
             {/* 登録ボタン */}
-            {pendingHabits.length > 0 && (
+            {(pendingHabits.length > 0 || pendingRemovals.length > 0) && (
               <button
-                onClick={registerHabits}
+                onClick={registerChanges}
                 disabled={registering}
                 className="w-full btn-primary disabled:opacity-50 disabled:cursor-not-allowed mb-4"
               >
                 {registering ? (
                   <div className="flex items-center justify-center space-x-2">
                     <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
-                    <span>登録中...</span>
+                    <span>更新中...</span>
                   </div>
                 ) : (
-                  `登録する (${pendingHabits.length}件)`
+                  `変更を登録 (追加${pendingHabits.length}件 / 削除${pendingRemovals.length}件)`
                 )}
               </button>
             )}

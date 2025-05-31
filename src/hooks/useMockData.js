@@ -78,13 +78,26 @@ export const useMockAuth = () => {
 };
 
 export const useMockHabits = (userId) => {
-  const [habits] = useState(generateMockHabits());
-  const [assets] = useState({
-    lifeDays: 0.245, // 7日間の累積値をリアルに計算
-    medicalSavings: 2180,
-    skillAssets: 1568,
-    focusHours: 8.5
-  });
+  const mockHabits = generateMockHabits();
+  const [habits] = useState(mockHabits);
+  
+  // モックデータから実際の累積資産を計算
+  const calculateRealAssets = () => {
+    let totalAssets = { lifeDays: 0, medicalSavings: 0, skillAssets: 0, focusHours: 0 };
+    
+    mockHabits.forEach(habit => {
+      if (habit.value) {
+        totalAssets.lifeDays += habit.value.lifeDays || 0;
+        totalAssets.medicalSavings += habit.value.medicalSavings || 0;
+        totalAssets.skillAssets += habit.value.skillAssets || 0;
+        totalAssets.focusHours += habit.value.focusHours || 0;
+      }
+    });
+    
+    return totalAssets;
+  };
+  
+  const [assets] = useState(calculateRealAssets());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
