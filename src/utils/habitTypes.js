@@ -97,12 +97,33 @@ export const calculateHabitValue = (habitType, duration = 1) => {
 
 // 総資産価値を計算（集中時間は1時間100円で換算）
 export const calculateTotalAssetValue = (assets) => {
-  return (assets.medicalSavings || 0) + 
-         (assets.skillAssets || 0) + 
-         (assets.focusHours || 0) * 100;
+  // assetsがnullやundefinedの場合のエラーハンドリング
+  if (!assets || typeof assets !== 'object') {
+    console.warn('calculateTotalAssetValue: 無効なassets値:', assets);
+    return 0;
+  }
+  
+  try {
+    return (assets.medicalSavings || 0) + 
+           (assets.skillAssets || 0) + 
+           (assets.focusHours || 0) * 100;
+  } catch (error) {
+    console.error('calculateTotalAssetValueエラー:', error, 'assets:', assets);
+    return 0;
+  }
 };
 
 // 健康寿命を分単位で計算
 export const calculateLifeMinutes = (lifeDays) => {
-  return Math.round(lifeDays * 24 * 60); // 日 → 分
+  if (typeof lifeDays !== 'number' || isNaN(lifeDays)) {
+    console.warn('calculateLifeMinutes: 無効なlifeDays値:', lifeDays);
+    return 0;
+  }
+  
+  try {
+    return Math.round(lifeDays * 24 * 60); // 日 → 分
+  } catch (error) {
+    console.error('calculateLifeMinutesエラー:', error, 'lifeDays:', lifeDays);
+    return 0;
+  }
 };

@@ -110,6 +110,15 @@ export const useMockHabits = (userId) => {
     await addHabits([habitData]);
   };
 
+  // モック削除機能（実際には何もしない）
+  const removeHabits = async (habitsToRemove) => {
+    console.log('Mock: 習慣を削除しました', habitsToRemove);
+  };
+
+  const removeHabit = async (habitData) => {
+    await removeHabits([habitData]);
+  };
+
   // 指定日の習慣を取得
   const getHabitsForDate = (date) => {
     return habits.filter(habit => habit.date === date);
@@ -172,7 +181,9 @@ export const useMockHabits = (userId) => {
     loading, 
     error,
     addHabit,
-    addHabits, 
+    addHabits,
+    removeHabit,
+    removeHabits, 
     getHabitsForDate,
     getStats,
     getAssetTrendData
