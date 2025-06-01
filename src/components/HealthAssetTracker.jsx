@@ -32,6 +32,12 @@ const HealthAssetTracker = ({ user, onLogout }) => {
   // 今日実行済みの習慣タイプを取得
   const todayCompletedHabits = getHabitsForDate(selectedDate).map(h => h.type);
   const todayHabitRecords = getHabitsForDate(selectedDate);
+  
+  // デバッグ：今日の習慣データを確認
+  console.log('todayHabitRecords:', todayHabitRecords);
+  todayHabitRecords.forEach((record, index) => {
+    console.log(`record[${index}] ID: ${record.id}, ID型: ${typeof record.id}`);
+  });
 
   // 習慣のON/OFFを切り替え（常時編集モード）
   const toggleHabit = (habitType) => {
@@ -59,7 +65,7 @@ const HealthAssetTracker = ({ user, onLogout }) => {
   // 保留中の習慣を追加
   const addPendingHabit = (habitType, duration = 1) => {
     const habit = {
-      id: Date.now(),
+      id: `temp-${Date.now()}`,  // 文字列に変換
       type: habitType,
       duration,
       date: selectedDate,
@@ -69,7 +75,13 @@ const HealthAssetTracker = ({ user, onLogout }) => {
 
   // 完了済み習慣を削除（削除待ちリストに追加）
   const removeCompletedHabit = (habitType) => {
+    console.log('removeCompletedHabit呼び出し - habitType:', habitType);
+    console.log('todayHabitRecords:', todayHabitRecords);
+    
     const habitToRemove = todayHabitRecords.find(h => h.type === habitType);
+    console.log('habitToRemove:', habitToRemove);
+    console.log('habitToRemove ID:', habitToRemove?.id, 'ID型:', typeof habitToRemove?.id);
+    
     if (habitToRemove) {
       setPendingRemovals(prev => [...prev, habitToRemove]);
     }
@@ -94,6 +106,14 @@ const HealthAssetTracker = ({ user, onLogout }) => {
     console.log('追加予定:', pendingHabits);
     console.log('削除予定:', pendingRemovals);
     console.log('removeHabits関数:', typeof removeHabits);
+    
+    // 削除予定の詳細を確認
+    console.log('削除予定の詳細:');
+    pendingRemovals.forEach((removal, index) => {
+      console.log(`[${index}] ID: ${removal.id}, Type: ${removal.type}, Date: ${removal.date}`);
+      console.log(`[${index}] ID型: ${typeof removal.id}`);
+      console.log(`[${index}] 完全なオブジェクト:`, JSON.stringify(removal, null, 2));
+    });
 
     try {
       setRegistering(true);
@@ -126,8 +146,12 @@ const HealthAssetTracker = ({ user, onLogout }) => {
     } catch (error) {
       console.error('=== 削除処理エラー ===', error);
       console.error('Registration failed:', error);
-      // setErrorはコンポーネントにstateがないためコメントアウト
-      // setError('削除処理に失敗しました: ' + error.message);
+      console.error('エラータイプ:', error.name);
+      console.error('エラーメッセージ:', error.message);
+      console.error('スタックトレース:', error.stack);
+      
+      // エラーメッセージをユーザーに表示
+      alert(`削除処理に失敗しました: ${error.message}`);
     } finally {
       setRegistering(false);
     }
@@ -566,44 +590,128 @@ const HealthAssetTracker = ({ user, onLogout }) => {
           <div className="p-6">
             <h2 className="text-xl font-bold text-gray-800 mb-6">継続統計</h2>
             
-            {/* エラー回避のため一時的にシンプル表示 */}
-            <div className="bg-blue-50 rounded-xl p-4 mb-6 text-center">
-              <div className="text-blue-800 text-lg font-bold">🛠️ メンテナンス中</div>
-              <div className="text-blue-600 text-sm mt-2">統計機能を修正中です。しばらくお待ちください。</div>
+            {/* カテゴリー選択 */}
+            <div className="mb-6">
+              <label className="text-sm text-gray-600 mb-2 block">表示する習慣</label>
+              <select
+                value={selectedStatCategory}
+                onChange={(e) => setSelectedStatCategory(e.target.value)}
+                className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="all">全ての習慣</option>
+                {Object.entries(habitTypes).map(([key, habit]) => (
+                  <option key={key} value={key}>
+                    {habit.icon} {habit.name}
+                  </option>
+                ))}
+              </select>
             </div>
             
-            {/* シンプルな統計情報 */}
+            {/* 基本統計 */}
             <div className="grid grid-cols-2 gap-4 mb-6">
               <div className="bg-blue-50 p-4 rounded-xl text-center">
                 <div className="text-2xl font-bold text-blue-600">
-                  {habits ? new Set(habits.map(h => h.date)).size : 0}
+                  {habits && habits.length > 0 ? new Set(habits.map(h => h.date)).size : 0}
                 </div>
-                <div className="text-sm text-blue-800">継続日数</div>
+                <div className="text-sm text-blue-800">記録日数</div>
               </div>
               <div className="bg-green-50 p-4 rounded-xl text-center">
                 <div className="text-2xl font-bold text-green-600">
-                  {habits ? habits.length : 0}
+                  {selectedStatCategory === 'all' 
+                    ? (habits ? habits.length : 0)
+                    : (habits ? habits.filter(h => h.type === selectedStatCategory).length : 0)
+                  }
                 </div>
-                <div className="text-sm text-green-800">総実行回数</div>
+                <div className="text-sm text-green-800">
+                  {selectedStatCategory === 'all' ? '総実行回数' : '実行回数'}
+                </div>
               </div>
             </div>
+            
+            {/* グラフ表示エリア */}
+            {filteredStats.data && filteredStats.data.length > 0 ? (
+              <div className="mb-6">
+                <h3 className="font-bold text-gray-800 mb-3">
+                  {filteredStats.title}の推移
+                </h3>
+                <div className="bg-white rounded-xl p-4 shadow-sm" style={{ height: '200px' }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={filteredStats.data}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                      <XAxis 
+                        dataKey="date" 
+                        fontSize={12}
+                        tick={{ fill: '#666' }}
+                      />
+                      <YAxis 
+                        fontSize={12}
+                        tick={{ fill: '#666' }}
+                      />
+                      <Tooltip 
+                        contentStyle={{ 
+                          backgroundColor: 'rgba(255, 255, 255, 0.95)',
+                          border: '1px solid #e0e0e0',
+                          borderRadius: '8px'
+                        }}
+                      />
+                      <Line 
+                        type="monotone" 
+                        dataKey={selectedStatCategory === 'all' ? 'totalValue' : 'count'}
+                        stroke="#3B82F6" 
+                        strokeWidth={2}
+                        dot={{ fill: '#3B82F6', r: 4 }}
+                        name={selectedStatCategory === 'all' ? '総資産価値' : '実行回数'}
+                      />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            ) : (
+              <div className="bg-gray-50 rounded-xl p-8 mb-6 text-center">
+                <p className="text-gray-500">データがまだありません</p>
+                <p className="text-gray-400 text-sm mt-2">習慣を記録すると、グラフが表示されます</p>
+              </div>
+            )}
             
             {/* 習慣別実行回数 */}
             <div className="bg-gray-50 rounded-xl p-4">
               <h3 className="font-bold text-gray-800 mb-3">習慣別実行回数</h3>
               {habits && habits.length > 0 ? (
-                Object.entries(habitTypes).map(([key, habit]) => {
-                  const count = habits.filter(h => h && h.type === key).length;
-                  return count > 0 ? (
-                    <div key={key} className="flex items-center justify-between py-2">
-                      <div className="flex items-center">
-                        <span className="text-lg mr-2">{habit.icon}</span>
-                        <span>{habit.name}</span>
+                Object.entries(habitTypes)
+                  .map(([key, habit]) => {
+                    const count = habits.filter(h => h && h.type === key).length;
+                    const percentage = habits.length > 0 
+                      ? Math.round((count / habits.length) * 100) 
+                      : 0;
+                    return { key, habit, count, percentage };
+                  })
+                  .filter(item => item.count > 0)
+                  .sort((a, b) => b.count - a.count)
+                  .map(({ key, habit, count, percentage }, index) => (
+                    <div key={key} className="mb-3">
+                      <div className="flex items-center justify-between mb-1">
+                        <div className="flex items-center">
+                          <span className="text-lg mr-2">{habit.icon}</span>
+                          <span className="font-medium">{habit.name}</span>
+                          {index === 0 && (
+                            <span className="ml-2 text-xs bg-yellow-400 text-yellow-800 px-2 py-0.5 rounded-full">
+                              TOP
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-right">
+                          <span className="font-bold text-blue-600">{count}回</span>
+                          <span className="text-xs text-gray-500 ml-1">({percentage}%)</span>
+                        </div>
                       </div>
-                      <span className="font-bold text-blue-600">{count}回</span>
+                      <div className="w-full bg-gray-200 rounded-full h-2">
+                        <div 
+                          className="bg-gradient-to-r from-blue-500 to-blue-600 h-2 rounded-full transition-all duration-300"
+                          style={{ width: `${percentage}%` }}
+                        />
+                      </div>
                     </div>
-                  ) : null;
-                })
+                  ))
               ) : (
                 <p className="text-gray-500 text-center py-4">
                   習慣を記録して統計を確認しましょう

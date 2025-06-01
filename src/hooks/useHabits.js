@@ -41,12 +41,24 @@ export const useHabits = (userId) => {
     const unsubscribe = onSnapshot(
       habitsQuery, 
       (snapshot) => {
-        const habitsData = snapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data(),
-          timestamp: doc.data().timestamp?.toDate(), // Timestampを Date に変換
-          date: doc.data().date
-        }));
+        const habitsData = snapshot.docs.map(doc => {
+          const data = doc.data();
+          console.log('Firestore doc.id:', doc.id, 'type:', typeof doc.id);
+          console.log('Firestore doc.data():', data);
+          
+          // dataに既にidフィールドがあるか確認
+          if (data.id !== undefined) {
+            console.warn('WARNING: doc.data()にidフィールドが含まれています:', data.id, 'type:', typeof data.id);
+          }
+          
+          return {
+            id: doc.id, // FirestoreのドキュメントIDを使用（必ず文字列）
+            ...data,
+            timestamp: data.timestamp?.toDate(), // Timestampを Date に変換
+            date: data.date
+          };
+        });
+        console.log('All habits loaded:', habitsData);
         setHabits(habitsData);
         setLoading(false);
       },
@@ -95,8 +107,11 @@ export const useHabits = (userId) => {
         const habitRef = doc(collection(db, 'users', userId, 'habits'));
         const value = calculateHabitValue(habitData.type, habitData.duration);
         
+        // idフィールドを除外してFirestoreに保存
+        const { id, ...habitDataWithoutId } = habitData;
+        
         batch.set(habitRef, {
-          ...habitData,
+          ...habitDataWithoutId,
           value,
           timestamp: Timestamp.now()
         });
@@ -149,10 +164,16 @@ export const useHabits = (userId) => {
         fullHabit: habit
       });
       
-      // IDの検証
-      if (!habit.id || typeof habit.id !== 'string') {
-        console.error(`無効なhabit.id:`, habit.id, typeof habit.id);
-        throw new Error(`無効なhabit.id: ${habit.id} (type: ${typeof habit.id})`);
+      // IDの検証と変換
+      if (!habit.id) {
+        console.error(`habit.idが存在しません:`, habit);
+        throw new Error(`habit.idが存在しません`);
+      }
+      
+      // IDを文字列に変換（数値の場合）
+      if (typeof habit.id !== 'string') {
+        console.warn(`habit.idが文字列ではありません: ${habit.id} (type: ${typeof habit.id}). 文字列に変換します。`);
+        habit.id = String(habit.id);
       }
     });
 
