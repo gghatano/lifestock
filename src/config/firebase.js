@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth, GoogleAuthProvider } from 'firebase/auth';
+import { getAuth, GoogleAuthProvider, setPersistence, browserLocalPersistence } from 'firebase/auth';
 import { getFirestore, connectFirestoreEmulator } from 'firebase/firestore';
 
 const firebaseConfig = {
@@ -20,10 +20,27 @@ const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const db = getFirestore(app);
 
+// 認証の永続化設定を強化（サードパーティCookie問題への対処）
+setPersistence(auth, browserLocalPersistence)
+  .then(() => {
+    console.log('🔧 Firebase Auth persistence set to LOCAL');
+  })
+  .catch((error) => {
+    console.warn('⚠️ Failed to set persistence:', error);
+  });
+
 // Google認証プロバイダー
 export const googleProvider = new GoogleAuthProvider();
 googleProvider.addScope('profile');
 googleProvider.addScope('email');
+
+// SameSite Cookie問題への対処
+googleProvider.setCustomParameters({
+  // 強制的にアカウント選択画面を表示
+  prompt: 'select_account',
+  // リダイレクト時の認証フローを明示的に指定
+  access_type: 'online'
+});
 
 // 開発環境でのエミュレーター設定（オプション）
 if (import.meta.env.DEV && !globalThis.FIREBASE_EMULATOR_CONNECTED) {
