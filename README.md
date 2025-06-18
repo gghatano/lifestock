@@ -3,6 +3,14 @@
 健康・学習習慣を "未来の資産" として可視化するWebアプリケーションです。
 毎日の良い行動を数値化し、健康寿命の延伸・医療費削減・スキル向上による将来収入を計算します。
 
+## デモ画面
+
+<div style="display: flex; justify-content: center; gap: 10px;">
+  <img src="https://github.com/user-attachments/assets/d0fc2460-7f83-4c56-a553-dc0667d2380d" width="200"/>
+  <img src="https://github.com/user-attachments/assets/b3c79887-088e-4a44-b871-6affb47c7aad" width="200"/>
+  <img src="https://github.com/user-attachments/assets/3906abf7-8fdf-42f4-a878-e6f1f81b492a" width="200"/>
+</div>
+
 ## 🎯 特徴
 
 - **習慣の資産化**: 運動、勉強、睡眠などの習慣を金銭価値・寿命延伸に換算
