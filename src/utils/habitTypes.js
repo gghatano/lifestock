@@ -79,12 +79,19 @@ export const categories = {
   health: { name: '健康', color: 'text-red-600', bgColor: 'bg-red-50' },
   learning: { name: '学習', color: 'text-blue-600', bgColor: 'bg-blue-50' },
   focus: { name: '集中', color: 'text-purple-600', bgColor: 'bg-purple-50' },
-  mental: { name: 'メンタル', color: 'text-green-600', bgColor: 'bg-green-50' }
+  mental: { name: 'メンタル', color: 'text-green-600', bgColor: 'bg-green-50' },
+  custom: { name: 'カスタム', color: 'text-orange-600', bgColor: 'bg-orange-50' }
 };
 
-// 習慣の価値を計算
-export const calculateHabitValue = (habitType, duration = 1) => {
-  const habit = habitTypes[habitType];
+// カスタム習慣と統合した全習慣リストを取得
+export const getAllHabitTypes = (customHabitTypes = {}) => {
+  return { ...habitTypes, ...customHabitTypes };
+};
+
+// 習慣の価値を計算（カスタム習慣対応）
+export const calculateHabitValue = (habitType, duration = 1, customHabitTypes = {}) => {
+  const allHabitTypes = getAllHabitTypes(customHabitTypes);
+  const habit = allHabitTypes[habitType];
   if (!habit) return {};
 
   return {

@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
-import { Plus, TrendingUp, Calendar, Award, Heart, Brain, DollarSign, Clock, LogOut, User, ArrowRight, CheckCircle } from 'lucide-react';
+import { Plus, TrendingUp, Calendar, Award, Heart, Brain, DollarSign, Clock, LogOut, User, ArrowRight, CheckCircle, Edit2, Trash2, Settings } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { useHabits } from '../hooks/useHabits';
 import { useMockHabits } from '../hooks/useMockData';
-import { habitTypes, calculateTotalAssetValue, calculateLifeMinutes } from '../utils/habitTypes';
+import { useCustomHabits, useMockCustomHabits } from '../hooks/useCustomHabits';
+import CustomHabitModal from './CustomHabitModal';
+import { habitTypes, getAllHabitTypes, calculateTotalAssetValue, calculateLifeMinutes } from '../utils/habitTypes';
 
 const HealthAssetTracker = ({ user, onLogout }) => {
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
@@ -13,10 +15,17 @@ const HealthAssetTracker = ({ user, onLogout }) => {
   const [registering, setRegistering] = useState(false);
   const [showSuccessMessage, setShowSuccessMessage] = useState(false);
   const [selectedStatCategory, setSelectedStatCategory] = useState('all');
+  
+  // カスタム習慣モーダル関連
+  const [showCustomHabitModal, setShowCustomHabitModal] = useState(false);
+  const [editingCustomHabit, setEditingCustomHabit] = useState(null);
+  const [customHabitLoading, setCustomHabitLoading] = useState(false);
 
   // モックモードとFirebaseモードの切り替え
   const isMockMode = import.meta.env.VITE_MOCK_MODE === 'true';
   const habitsHook = isMockMode ? useMockHabits : useHabits;
+  const customHabitsHook = isMockMode ? useMockCustomHabits : useCustomHabits;
+  
   const { 
     habits, 
     assets, 
@@ -29,15 +38,22 @@ const HealthAssetTracker = ({ user, onLogout }) => {
     getAssetTrendData 
   } = habitsHook(user?.uid);
 
+  const {
+    customHabits,
+    loading: customHabitsLoading,
+    error: customHabitsError,
+    addCustomHabit,
+    updateCustomHabit,
+    deleteCustomHabit,
+    getCustomHabitsAsHabitTypes
+  } = customHabitsHook(user?.uid);
+
+  // 全習慣タイプ（既存 + カスタム）
+  const allHabitTypes = getAllHabitTypes(getCustomHabitsAsHabitTypes());
+
   // 今日実行済みの習慣タイプを取得
   const todayCompletedHabits = getHabitsForDate(selectedDate).map(h => h.type);
   const todayHabitRecords = getHabitsForDate(selectedDate);
-  
-  // デバッグ：今日の習慣データを確認
-  console.log('todayHabitRecords:', todayHabitRecords);
-  todayHabitRecords.forEach((record, index) => {
-    console.log(`record[${index}] ID: ${record.id}, ID型: ${typeof record.id}`);
-  });
 
   // 習慣のON/OFFを切り替え（常時編集モード）
   const toggleHabit = (habitType) => {
@@ -75,13 +91,7 @@ const HealthAssetTracker = ({ user, onLogout }) => {
 
   // 完了済み習慣を削除（削除待ちリストに追加）
   const removeCompletedHabit = (habitType) => {
-    console.log('removeCompletedHabit呼び出し - habitType:', habitType);
-    console.log('todayHabitRecords:', todayHabitRecords);
-    
     const habitToRemove = todayHabitRecords.find(h => h.type === habitType);
-    console.log('habitToRemove:', habitToRemove);
-    console.log('habitToRemove ID:', habitToRemove?.id, 'ID型:', typeof habitToRemove?.id);
-    
     if (habitToRemove) {
       setPendingRemovals(prev => [...prev, habitToRemove]);
     }
@@ -101,20 +111,6 @@ const HealthAssetTracker = ({ user, onLogout }) => {
   const registerChanges = async () => {
     if (pendingHabits.length === 0 && pendingRemovals.length === 0) return;
 
-    console.log('=== 削除処理開始 ===');
-    console.log('モックモード:', isMockMode);
-    console.log('追加予定:', pendingHabits);
-    console.log('削除予定:', pendingRemovals);
-    console.log('removeHabits関数:', typeof removeHabits);
-    
-    // 削除予定の詳細を確認
-    console.log('削除予定の詳細:');
-    pendingRemovals.forEach((removal, index) => {
-      console.log(`[${index}] ID: ${removal.id}, Type: ${removal.type}, Date: ${removal.date}`);
-      console.log(`[${index}] ID型: ${typeof removal.id}`);
-      console.log(`[${index}] 完全なオブジェクト:`, JSON.stringify(removal, null, 2));
-    });
-
     try {
       setRegistering(true);
       
@@ -125,14 +121,7 @@ const HealthAssetTracker = ({ user, onLogout }) => {
       
       // 習慣を削除
       if (pendingRemovals.length > 0) {
-        if (isMockMode) {
-          console.log('モック: 習慣を削除しました', pendingRemovals);
-        } else {
-          // Firebaseの場合は実際の削除処理を実行
-          console.log('Firebase: 削除処理実行中...');
-          await removeHabits(pendingRemovals);
-          console.log('Firebase: 削除処理完了');
-        }
+        await removeHabits(pendingRemovals);
       }
       
       setPendingHabits([]);
@@ -141,17 +130,9 @@ const HealthAssetTracker = ({ user, onLogout }) => {
       // 成功メッセージを表示
       setShowSuccessMessage(true);
       setTimeout(() => setShowSuccessMessage(false), 3000);
-      
-      console.log('=== 削除処理成功 ===');
     } catch (error) {
-      console.error('=== 削除処理エラー ===', error);
       console.error('Registration failed:', error);
-      console.error('エラータイプ:', error.name);
-      console.error('エラーメッセージ:', error.message);
-      console.error('スタックトレース:', error.stack);
-      
-      // エラーメッセージをユーザーに表示
-      alert(`削除処理に失敗しました: ${error.message}`);
+      alert(`処理に失敗しました: ${error.message}`);
     } finally {
       setRegistering(false);
     }
@@ -171,39 +152,165 @@ const HealthAssetTracker = ({ user, onLogout }) => {
     return sum + calculateTotalAssetValue(habit.value || {});
   }, 0);
 
+  // 連続記録を計算
+  const calculateStreaks = () => {
+    if (!habits || habits.length === 0) return { current: 0, longest: 0 };
+    
+    // 日付でソート（新しい順）
+    const sortedDates = [...new Set(habits.map(h => h.date))].sort((a, b) => 
+      new Date(b) - new Date(a)
+    );
+    
+    if (sortedDates.length === 0) return { current: 0, longest: 0 };
+    
+    let currentStreak = 0;
+    let longestStreak = 0;
+    let tempStreak = 1;
+    
+    // 今日の日付
+    const today = new Date().toISOString().split('T')[0];
+    
+    // 現在の連続記録を計算
+    if (sortedDates[0] === today || sortedDates[0] === new Date(Date.now() - 86400000).toISOString().split('T')[0]) {
+      currentStreak = 1;
+      for (let i = 1; i < sortedDates.length; i++) {
+        const prevDate = new Date(sortedDates[i - 1]);
+        const currDate = new Date(sortedDates[i]);
+        const diffDays = Math.floor((prevDate - currDate) / (1000 * 60 * 60 * 24));
+        
+        if (diffDays === 1) {
+          currentStreak++;
+        } else {
+          break;
+        }
+      }
+    }
+    
+    // 最長連続記録を計算
+    tempStreak = 1;
+    for (let i = 1; i < sortedDates.length; i++) {
+      const prevDate = new Date(sortedDates[i - 1]);
+      const currDate = new Date(sortedDates[i]);
+      const diffDays = Math.floor((prevDate - currDate) / (1000 * 60 * 60 * 24));
+      
+      if (diffDays === 1) {
+        tempStreak++;
+        longestStreak = Math.max(longestStreak, tempStreak);
+      } else {
+        tempStreak = 1;
+      }
+    }
+    longestStreak = Math.max(longestStreak, tempStreak);
+    
+    return { current: currentStreak, longest: longestStreak };
+  };
+
+  // 曜日別統計を計算
+  const calculateWeekdayStats = () => {
+    if (!habits || habits.length === 0) return [];
+    
+    const weekdays = ['日', '月', '火', '水', '木', '金', '土'];
+    const weekdayData = weekdays.map((day, index) => ({
+      day,
+      dayIndex: index,
+      count: 0,
+      habits: {}
+    }));
+    
+    // 選択されたカテゴリーでフィルタリング
+    const filteredHabits = selectedStatCategory === 'all' 
+      ? habits 
+      : habits.filter(h => h.type === selectedStatCategory);
+    
+    filteredHabits.forEach(habit => {
+      const date = new Date(habit.date);
+      const dayIndex = date.getDay();
+      weekdayData[dayIndex].count++;
+      
+      // 習慣タイプ別の集計
+      if (!weekdayData[dayIndex].habits[habit.type]) {
+        weekdayData[dayIndex].habits[habit.type] = 0;
+      }
+      weekdayData[dayIndex].habits[habit.type]++;
+    });
+    
+    // 最大値を見つける（グラフのスケール用）
+    const maxCount = Math.max(...weekdayData.map(d => d.count));
+    
+    return weekdayData.map(data => ({
+      ...data,
+      percentage: maxCount > 0 ? (data.count / maxCount) * 100 : 0
+    }));
+  };
+
+  const streaks = calculateStreaks();
+  const weekdayStats = calculateWeekdayStats();
+
+  // カスタム習慣の管理機能
+  const handleAddCustomHabit = () => {
+    setEditingCustomHabit(null);
+    setShowCustomHabitModal(true);
+  };
+
+  const handleEditCustomHabit = (habit) => {
+    setEditingCustomHabit(habit);
+    setShowCustomHabitModal(true);
+  };
+
+  const handleDeleteCustomHabit = async (habitId, habitName) => {
+    if (!confirm(`「${habitName}」を削除しますか？\n\n削除すると、この習慣の記録は残りますが、編集や新規記録ができなくなります。`)) {
+      return;
+    }
+
+    try {
+      await deleteCustomHabit(habitId);
+      setShowSuccessMessage(true);
+      setTimeout(() => setShowSuccessMessage(false), 3000);
+    } catch (error) {
+      alert(`削除に失敗しました: ${error.message}`);
+    }
+  };
+
+  const handleSaveCustomHabit = async (formData) => {
+    setCustomHabitLoading(true);
+    try {
+      if (editingCustomHabit) {
+        await updateCustomHabit(editingCustomHabit.id, formData);
+      } else {
+        await addCustomHabit(formData);
+      }
+      setShowCustomHabitModal(false);
+      setEditingCustomHabit(null);
+    } catch (error) {
+      throw error;
+    } finally {
+      setCustomHabitLoading(false);
+    }
+  };
+
   // 統計データのフィルタリング
   const getFilteredStats = () => {
-    console.log('getFilteredStats開始 - selectedStatCategory:', selectedStatCategory, 'habits:', habits);
-    
     if (selectedStatCategory === 'all') {
-      const result = {
+      return {
         habits: habits || [],
         title: '全習慣',
         data: trendData || []
       };
-      console.log('getFilteredStats(全習慣) - result:', result);
-      return result;
     }
     
     const filteredHabits = (habits || []).filter(h => h && h.type === selectedStatCategory);
     const habitConfig = habitTypes[selectedStatCategory];
     
-    const result = {
+    return {
       habits: filteredHabits,
       title: habitConfig?.name || '選択された習慣',
       data: getHabitSpecificTrendData(selectedStatCategory)
     };
-    
-    console.log('getFilteredStats(特定習慣) - result:', result);
-    return result;
   };
 
   // 特定習慣の推移データ生成
   const getHabitSpecificTrendData = (habitType) => {
-    console.log('getHabitSpecificTrendData開始 - habitType:', habitType, 'habits:', habits);
-    
     const filteredHabits = habits.filter(h => h && h.type === habitType);
-    console.log('filteredHabits:', filteredHabits);
     
     const dateGroups = {};
     let cumulativeCount = 0;
@@ -216,7 +323,6 @@ const HealthAssetTracker = ({ user, onLogout }) => {
     
     sortedHabits.forEach(habit => {
       if (!habit || !habit.date) {
-        console.warn('無効なhabitデータ:', habit);
         return;
       }
       
@@ -225,21 +331,14 @@ const HealthAssetTracker = ({ user, onLogout }) => {
       dateGroups[date] = cumulativeCount;
     });
 
-    const result = Object.entries(dateGroups).map(([date, count]) => {
-      const item = {
-        date: new Date(date).toLocaleDateString('ja-JP', { month: 'numeric', day: 'numeric' }),
-        totalValue: count,
-        count: count
-      };
-      console.log('habitSpecific resultItem:', item);
-      return item;
-    });
-    
-    console.log('getHabitSpecificTrendData完了 - result:', result);
-    return result;
+    return Object.entries(dateGroups).map(([date, count]) => ({
+      date: new Date(date).toLocaleDateString('ja-JP', { month: 'numeric', day: 'numeric' }),
+      totalValue: count,
+      count: count
+    }));
   };
 
-  if (loading) {
+  if (loading || customHabitsLoading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-50 to-purple-50 flex items-center justify-center">
         <div className="text-center">
@@ -302,9 +401,9 @@ const HealthAssetTracker = ({ user, onLogout }) => {
         )}
 
         {/* エラー表示 */}
-        {error && (
+        {(error || customHabitsError) && (
           <div className="bg-red-50 border-l-4 border-red-400 p-4 m-4">
-            <p className="text-red-700 text-sm">{error}</p>
+            <p className="text-red-700 text-sm">{error || customHabitsError}</p>
           </div>
         )}
 
@@ -364,7 +463,7 @@ const HealthAssetTracker = ({ user, onLogout }) => {
 
             {/* 習慣ボタン */}
             <div className="grid grid-cols-2 gap-3 mb-6">
-              {Object.entries(habitTypes).map(([key, habit]) => {
+              {Object.entries(allHabitTypes).map(([key, habit]) => {
                 const isCompleted = todayCompletedHabits.includes(key) && !pendingRemovals.some(r => r.type === key);
                 const isPending = pendingHabits.some(h => h.type === key);
                 const isPendingRemoval = pendingRemovals.some(r => r.type === key);
@@ -394,21 +493,61 @@ const HealthAssetTracker = ({ user, onLogout }) => {
                 };
                 
                 return (
-                  <button
-                    key={key}
-                    onClick={() => toggleHabit(key)}
-                    className={`p-4 rounded-xl font-medium shadow-lg transform transition-all hover:scale-105 active:scale-95 ${getButtonStyle()}`}
-                  >
-                    <div className="text-2xl mb-1">
-                      {getIcon()}
-                    </div>
-                    <div className="text-sm">{habit.name}</div>
-                    <div className="text-xs mt-1 opacity-80">
-                      {getStatusText()}
-                    </div>
-                  </button>
+                  <div key={key} className="relative">
+                    <button
+                      onClick={() => toggleHabit(key)}
+                      className={`w-full p-4 rounded-xl font-medium shadow-lg transform transition-all hover:scale-105 active:scale-95 ${getButtonStyle()}`}
+                    >
+                      <div className="text-2xl mb-1">
+                        {getIcon()}
+                      </div>
+                      <div className="text-sm">{habit.name}</div>
+                      <div className="text-xs mt-1 opacity-80">
+                        {getStatusText()}
+                      </div>
+                    </button>
+                    
+                    {/* カスタム習慣の場合は編集・削除ボタン */}
+                    {habit.isCustom && (
+                      <div className="absolute top-1 right-1 flex space-x-1">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const customHabit = customHabits.find(h => h.id === habit.customId);
+                            if (customHabit) handleEditCustomHabit(customHabit);
+                          }}
+                          className="p-1 bg-white bg-opacity-80 hover:bg-opacity-100 rounded-full shadow-sm transition-all"
+                          title="編集"
+                        >
+                          <Edit2 size={12} className="text-gray-600" />
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const customHabit = customHabits.find(h => h.id === habit.customId);
+                            if (customHabit) handleDeleteCustomHabit(habit.customId, customHabit.name);
+                          }}
+                          className="p-1 bg-white bg-opacity-80 hover:bg-opacity-100 rounded-full shadow-sm transition-all"
+                          title="削除"
+                        >
+                          <Trash2 size={12} className="text-red-500" />
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 );
               })}
+            </div>
+
+            {/* カスタム習慣追加ボタン */}
+            <div className="mb-6">
+              <button
+                onClick={handleAddCustomHabit}
+                className="w-full p-4 border-2 border-dashed border-gray-300 rounded-xl text-gray-600 hover:border-purple-400 hover:text-purple-600 transition-all flex items-center justify-center space-x-2"
+              >
+                <Plus size={20} />
+                <span className="font-medium">新しい習慣を追加</span>
+              </button>
             </div>
 
             {/* 変更概要 */}
@@ -420,7 +559,7 @@ const HealthAssetTracker = ({ user, onLogout }) => {
                   <div className="mb-2">
                     <h4 className="text-green-700 font-medium mb-1">追加予定 ({pendingHabits.length}件)</h4>
                     <div className="text-sm text-green-600">
-                      {pendingHabits.map(h => habitTypes[h.type].name).join(', ')}
+                      {pendingHabits.map(h => allHabitTypes[h.type]?.name || h.type).join(', ')}
                     </div>
                   </div>
                 )}
@@ -429,7 +568,7 @@ const HealthAssetTracker = ({ user, onLogout }) => {
                   <div>
                     <h4 className="text-red-700 font-medium mb-1">削除予定 ({pendingRemovals.length}件)</h4>
                     <div className="text-sm text-red-600">
-                      {pendingRemovals.map(h => habitTypes[h.type].name).join(', ')}
+                      {pendingRemovals.map(h => allHabitTypes[h.type]?.name || h.type).join(', ')}
                     </div>
                   </div>
                 )}
@@ -451,12 +590,14 @@ const HealthAssetTracker = ({ user, onLogout }) => {
                   </div>
                   <div className="space-y-2">
                     {todayHabits.map((habit) => {
-                      const config = habitTypes[habit.type];
+                      const config = allHabitTypes[habit.type];
                       return (
                         <div key={habit.id} className="flex items-center justify-between bg-white p-3 rounded-lg">
                           <div className="flex items-center">
-                            <span className="text-xl mr-3">{config.icon}</span>
-                            <span className="font-medium">{config.name}</span>
+                            <span className="text-xl mr-3 w-6 text-center">
+                              {config?.icon || '📝'}
+                            </span>
+                            <span className="font-medium">{config?.name || habit.type}</span>
                           </div>
                           <div className="text-right text-sm text-gray-600">
                             {habit.value?.lifeDays && (
@@ -599,7 +740,7 @@ const HealthAssetTracker = ({ user, onLogout }) => {
                 className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
                 <option value="all">全ての習慣</option>
-                {Object.entries(habitTypes).map(([key, habit]) => (
+                {Object.entries(allHabitTypes).map(([key, habit]) => (
                   <option key={key} value={key}>
                     {habit.icon} {habit.name}
                   </option>
@@ -609,11 +750,19 @@ const HealthAssetTracker = ({ user, onLogout }) => {
             
             {/* 基本統計 */}
             <div className="grid grid-cols-2 gap-4 mb-6">
-              <div className="bg-blue-50 p-4 rounded-xl text-center">
-                <div className="text-2xl font-bold text-blue-600">
-                  {habits && habits.length > 0 ? new Set(habits.map(h => h.date)).size : 0}
+              <div className="bg-orange-50 p-4 rounded-xl text-center relative overflow-hidden">
+                <div className="absolute top-0 right-0 w-20 h-20 bg-orange-100 rounded-full -mr-10 -mt-10 opacity-50"></div>
+                <div className="relative z-10">
+                  <div className="text-2xl font-bold text-orange-600">
+                    {streaks.current}
+                  </div>
+                  <div className="text-sm text-orange-800">現在の連続記録</div>
+                  {streaks.longest > 0 && (
+                    <div className="text-xs text-orange-600 mt-1">
+                      最長: {streaks.longest}日
+                    </div>
+                  )}
                 </div>
-                <div className="text-sm text-blue-800">記録日数</div>
               </div>
               <div className="bg-green-50 p-4 rounded-xl text-center">
                 <div className="text-2xl font-bold text-green-600">
@@ -677,7 +826,7 @@ const HealthAssetTracker = ({ user, onLogout }) => {
             <div className="bg-gray-50 rounded-xl p-4">
               <h3 className="font-bold text-gray-800 mb-3">習慣別実行回数</h3>
               {habits && habits.length > 0 ? (
-                Object.entries(habitTypes)
+                Object.entries(allHabitTypes)
                   .map(([key, habit]) => {
                     const count = habits.filter(h => h && h.type === key).length;
                     const percentage = habits.length > 0 
@@ -718,8 +867,98 @@ const HealthAssetTracker = ({ user, onLogout }) => {
                 </p>
               )}
             </div>
+            
+            {/* 曜日別傾向分析 */}
+            {weekdayStats.some(d => d.count > 0) && (
+              <div className="mt-6">
+                <h3 className="font-bold text-gray-800 mb-4">曜日別傾向分析</h3>
+                <div className="bg-white rounded-xl p-4 shadow-sm">
+                  <div className="grid grid-cols-7 gap-2">
+                    {weekdayStats.map((data, index) => {
+                      const isToday = new Date().getDay() === index;
+                      const hasData = data.count > 0;
+                      
+                      return (
+                        <div key={data.day} className="text-center">
+                          <div className={`text-sm font-medium mb-2 ${
+                            isToday ? 'text-blue-600 font-bold' : 'text-gray-600'
+                          }`}>
+                            {data.day}
+                          </div>
+                          <div className="relative h-24 bg-gray-100 rounded-lg overflow-hidden">
+                            {hasData && (
+                              <div 
+                                className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-blue-500 to-blue-400 transition-all duration-500"
+                                style={{ height: `${data.percentage}%` }}
+                              >
+                                <div className="absolute inset-0 flex items-center justify-center">
+                                  <span className="text-white text-xs font-bold">
+                                    {data.count}
+                                  </span>
+                                </div>
+                              </div>
+                            )}
+                            {!hasData && (
+                              <div className="h-full flex items-center justify-center">
+                                <span className="text-gray-400 text-xs">0</span>
+                              </div>
+                            )}
+                          </div>
+                          {isToday && (
+                            <div className="mt-1">
+                              <div className="w-2 h-2 bg-blue-600 rounded-full mx-auto"></div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                  
+                  {/* 曜日別の最も多い習慣 */}
+                  {selectedStatCategory === 'all' && (
+                    <div className="mt-4 pt-4 border-t border-gray-200">
+                      <div className="text-sm text-gray-600 mb-2">曜日別の人気習慣</div>
+                      <div className="grid grid-cols-7 gap-1 text-xs">
+                        {weekdayStats.map((data) => {
+                          const topHabit = Object.entries(data.habits)
+                            .sort(([,a], [,b]) => b - a)[0];
+                          
+                          return (
+                            <div key={data.day} className="text-center">
+                              {topHabit ? (
+                                <div className="text-lg" title={allHabitTypes[topHabit[0]]?.name}>
+                                  {allHabitTypes[topHabit[0]]?.icon || '📝'}
+                                </div>
+                              ) : (
+                                <div className="text-gray-300">-</div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                  
+                  <div className="mt-3 text-xs text-gray-500 text-center">
+                    {weekdayStats.reduce((max, d) => d.count > max.count ? d : max).day}曜日が最も活発です
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
+
+        {/* カスタム習慣モーダル */}
+        <CustomHabitModal
+          isOpen={showCustomHabitModal}
+          onClose={() => {
+            setShowCustomHabitModal(false);
+            setEditingCustomHabit(null);
+          }}
+          onSave={handleSaveCustomHabit}
+          editingHabit={editingCustomHabit}
+          loading={customHabitLoading}
+        />
       </div>
     </div>
   );

@@ -10,6 +10,11 @@ service cloud.firestore {
         allow read, write: if request.auth != null && request.auth.uid == userId;
       }
       
+      // ユーザーのカスタム習慣コレクション - 本人のみアクセス可能
+      match /customHabits/{customHabitId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
+      
       // ユーザーの日別統計コレクション - 本人のみアクセス可能
       match /dailyStats/{date} {
         allow read, write: if request.auth != null && request.auth.uid == userId;
