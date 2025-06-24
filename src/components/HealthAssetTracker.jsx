@@ -288,6 +288,7 @@ const HealthAssetTracker = ({ user, onLogout }) => {
 
   // デフォルト習慣の編集
   const handleEditDefaultHabit = (habitKey, habitConfig) => {
+    console.log('handleEditDefaultHabit called:', { habitKey, habitConfig });
     // デフォルト習慣をカスタム習慣として複製してモーダルを開く
     const customHabitData = {
       name: habitConfig.name,
@@ -302,21 +303,25 @@ const HealthAssetTracker = ({ user, onLogout }) => {
       isEditingDefault: true,
       originalDefaultKey: habitKey
     };
+    console.log('Setting editing custom habit:', customHabitData);
     setEditingCustomHabit(customHabitData);
     setShowCustomHabitModal(true);
   };
 
   // デフォルト習慣の削除（無効化）
   const handleDeleteDefaultHabit = async (habitKey, habitName) => {
+    console.log('handleDeleteDefaultHabit called:', { habitKey, habitName });
     if (!confirm(`「${habitName}」を無効化しますか？\n\n無効化すると習慣リストから非表示になりますが、過去の記録は残ります。設定から再度有効化できます。`)) {
       return;
     }
 
     try {
+      console.log('Calling disableDefaultHabit:', habitKey);
       await disableDefaultHabit(habitKey);
       setShowSuccessMessage(true);
       setTimeout(() => setShowSuccessMessage(false), 3000);
     } catch (error) {
+      console.error('handleDeleteDefaultHabit error:', error);
       alert(`無効化に失敗しました: ${error.message}`);
     }
   };
@@ -520,10 +525,10 @@ const HealthAssetTracker = ({ user, onLogout }) => {
 
             {/* 習慣ボタン */}
             <div className="grid grid-cols-2 gap-3 mb-6">
-              {Object.entries(allHabitTypes).map(([key, habit]) => {
-                const isCompleted = todayCompletedHabits.includes(key) && !pendingRemovals.some(r => r.type === key);
-                const isPending = pendingHabits.some(h => h.type === key);
-                const isPendingRemoval = pendingRemovals.some(r => r.type === key);
+              {Object.entries(allHabitTypes).map(([habitKey, habit]) => {
+                const isCompleted = todayCompletedHabits.includes(habitKey) && !pendingRemovals.some(r => r.type === habitKey);
+                const isPending = pendingHabits.some(h => h.type === habitKey);
+                const isPendingRemoval = pendingRemovals.some(r => r.type === habitKey);
                 
                 // 状態に応じたスタイルを決定
                 const getButtonStyle = () => {
@@ -550,9 +555,9 @@ const HealthAssetTracker = ({ user, onLogout }) => {
                 };
                 
                 return (
-                  <div key={key} className="relative">
+                  <div key={habitKey} className="relative">
                     <button
-                      onClick={() => toggleHabit(key)}
+                      onClick={() => toggleHabit(habitKey)}
                       className={`w-full p-4 rounded-xl font-medium shadow-lg transform transition-all hover:scale-105 active:scale-95 ${getButtonStyle()}`}
                     >
                       <div className="text-2xl mb-1">
