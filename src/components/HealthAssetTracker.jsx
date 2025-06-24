@@ -4,6 +4,7 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 import { useHabits } from '../hooks/useHabits';
 import { useMockHabits } from '../hooks/useMockData';
 import { useCustomHabits, useMockCustomHabits } from '../hooks/useCustomHabits';
+import { useUserPreferences, useMockUserPreferences } from '../hooks/useUserPreferences';
 import CustomHabitModal from './CustomHabitModal';
 import { habitTypes, getAllHabitTypes, calculateTotalAssetValue, calculateLifeMinutes } from '../utils/habitTypes';
 
@@ -48,8 +49,22 @@ const HealthAssetTracker = ({ user, onLogout }) => {
     getCustomHabitsAsHabitTypes
   } = customHabitsHook(user?.uid);
 
-  // 全習慣タイプ（既存 + カスタム）
-  const allHabitTypes = getAllHabitTypes(getCustomHabitsAsHabitTypes());
+  // ユーザー設定
+  const userPreferencesHook = isMockMode ? useMockUserPreferences : useUserPreferences;
+  const {
+    preferences,
+    loading: preferencesLoading,
+    error: preferencesError,
+    disableDefaultHabit,
+    enableDefaultHabit,
+    isDefaultHabitDisabled
+  } = userPreferencesHook(user?.uid);
+
+  // 全習慣タイプ（既存 + カスタム）- 無効化された習慣を除外
+  const enabledDefaultHabits = Object.fromEntries(
+    Object.entries(habitTypes).filter(([key, habit]) => !isDefaultHabitDisabled(key))
+  );
+  const allHabitTypes = { ...enabledDefaultHabits, ...getCustomHabitsAsHabitTypes() };
 
   // 今日実行済みの習慣タイプを取得
   const todayCompletedHabits = getHabitsForDate(selectedDate).map(h => h.type);
@@ -271,12 +286,59 @@ const HealthAssetTracker = ({ user, onLogout }) => {
     }
   };
 
+  // デフォルト習慣の編集
+  const handleEditDefaultHabit = (habitKey, habitConfig) => {
+    console.log('handleEditDefaultHabit called:', { habitKey, habitConfig });
+    // デフォルト習慣をカスタム習慣として複製してモーダルを開く
+    const customHabitData = {
+      name: habitConfig.name,
+      icon: habitConfig.icon,
+      category: habitConfig.category,
+      lifeDays: habitConfig.lifeDays || 0,
+      medicalSavings: habitConfig.medicalSavings || 0,
+      skillAssets: habitConfig.skillAssets || 0,
+      focusHours: habitConfig.focusHours || 0,
+      description: habitConfig.description,
+      detail: habitConfig.detail,
+      isEditingDefault: true,
+      originalDefaultKey: habitKey
+    };
+    console.log('Setting editing custom habit:', customHabitData);
+    setEditingCustomHabit(customHabitData);
+    setShowCustomHabitModal(true);
+  };
+
+  // デフォルト習慣の削除（無効化）
+  const handleDeleteDefaultHabit = async (habitKey, habitName) => {
+    console.log('handleDeleteDefaultHabit called:', { habitKey, habitName });
+    if (!confirm(`「${habitName}」を無効化しますか？\n\n無効化すると習慣リストから非表示になりますが、過去の記録は残ります。設定から再度有効化できます。`)) {
+      return;
+    }
+
+    try {
+      console.log('Calling disableDefaultHabit:', habitKey);
+      await disableDefaultHabit(habitKey);
+      setShowSuccessMessage(true);
+      setTimeout(() => setShowSuccessMessage(false), 3000);
+    } catch (error) {
+      console.error('handleDeleteDefaultHabit error:', error);
+      alert(`無効化に失敗しました: ${error.message}`);
+    }
+  };
+
   const handleSaveCustomHabit = async (formData) => {
     setCustomHabitLoading(true);
     try {
-      if (editingCustomHabit) {
+      if (editingCustomHabit?.isEditingDefault) {
+        // デフォルト習慣を編集している場合：新しいカスタム習慣として保存＋元の無効化
+        const { isEditingDefault, originalDefaultKey, ...cleanFormData } = formData;
+        await addCustomHabit(cleanFormData);
+        await disableDefaultHabit(originalDefaultKey);
+      } else if (editingCustomHabit) {
+        // 既存のカスタム習慣を更新
         await updateCustomHabit(editingCustomHabit.id, formData);
       } else {
+        // 新しいカスタム習慣を追加
         await addCustomHabit(formData);
       }
       setShowCustomHabitModal(false);
@@ -338,7 +400,7 @@ const HealthAssetTracker = ({ user, onLogout }) => {
     }));
   };
 
-  if (loading || customHabitsLoading) {
+  if (loading || customHabitsLoading || preferencesLoading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-50 to-purple-50 flex items-center justify-center">
         <div className="text-center">
@@ -463,10 +525,10 @@ const HealthAssetTracker = ({ user, onLogout }) => {
 
             {/* 習慣ボタン */}
             <div className="grid grid-cols-2 gap-3 mb-6">
-              {Object.entries(allHabitTypes).map(([key, habit]) => {
-                const isCompleted = todayCompletedHabits.includes(key) && !pendingRemovals.some(r => r.type === key);
-                const isPending = pendingHabits.some(h => h.type === key);
-                const isPendingRemoval = pendingRemovals.some(r => r.type === key);
+              {Object.entries(allHabitTypes).map(([habitKey, habit]) => {
+                const isCompleted = todayCompletedHabits.includes(habitKey) && !pendingRemovals.some(r => r.type === habitKey);
+                const isPending = pendingHabits.some(h => h.type === habitKey);
+                const isPendingRemoval = pendingRemovals.some(r => r.type === habitKey);
                 
                 // 状態に応じたスタイルを決定
                 const getButtonStyle = () => {
@@ -493,9 +555,9 @@ const HealthAssetTracker = ({ user, onLogout }) => {
                 };
                 
                 return (
-                  <div key={key} className="relative">
+                  <div key={habitKey} className="relative">
                     <button
-                      onClick={() => toggleHabit(key)}
+                      onClick={() => toggleHabit(habitKey)}
                       className={`w-full p-4 rounded-xl font-medium shadow-lg transform transition-all hover:scale-105 active:scale-95 ${getButtonStyle()}`}
                     >
                       <div className="text-2xl mb-1">
@@ -507,33 +569,41 @@ const HealthAssetTracker = ({ user, onLogout }) => {
                       </div>
                     </button>
                     
-                    {/* カスタム習慣の場合は編集・削除ボタン */}
-                    {habit.isCustom && (
-                      <div className="absolute top-1 right-1 flex space-x-1">
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
+                    {/* 編集・削除ボタン */}
+                    <div className="absolute top-1 right-1 flex space-x-1">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (habit.isCustom) {
                             const customHabit = customHabits.find(h => h.id === habit.customId);
                             if (customHabit) handleEditCustomHabit(customHabit);
-                          }}
-                          className="p-1 bg-white bg-opacity-80 hover:bg-opacity-100 rounded-full shadow-sm transition-all"
-                          title="編集"
-                        >
-                          <Edit2 size={12} className="text-gray-600" />
-                        </button>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
+                          } else {
+                            // デフォルト習慣の編集
+                            handleEditDefaultHabit(habitKey, habit);
+                          }
+                        }}
+                        className="p-1 bg-white bg-opacity-80 hover:bg-opacity-100 rounded-full shadow-sm transition-all"
+                        title="編集"
+                      >
+                        <Edit2 size={12} className="text-gray-600" />
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (habit.isCustom) {
                             const customHabit = customHabits.find(h => h.id === habit.customId);
                             if (customHabit) handleDeleteCustomHabit(habit.customId, customHabit.name);
-                          }}
-                          className="p-1 bg-white bg-opacity-80 hover:bg-opacity-100 rounded-full shadow-sm transition-all"
-                          title="削除"
-                        >
-                          <Trash2 size={12} className="text-red-500" />
-                        </button>
-                      </div>
-                    )}
+                          } else {
+                            // デフォルト習慣の削除（無効化）
+                            handleDeleteDefaultHabit(habitKey, habit.name);
+                          }
+                        }}
+                        className="p-1 bg-white bg-opacity-80 hover:bg-opacity-100 rounded-full shadow-sm transition-all"
+                        title={habit.isCustom ? "削除" : "無効化"}
+                      >
+                        <Trash2 size={12} className="text-red-500" />
+                      </button>
+                    </div>
                   </div>
                 );
               })}
@@ -829,8 +899,9 @@ const HealthAssetTracker = ({ user, onLogout }) => {
                 Object.entries(allHabitTypes)
                   .map(([key, habit]) => {
                     const count = habits.filter(h => h && h.type === key).length;
-                    const percentage = habits.length > 0 
-                      ? Math.round((count / habits.length) * 100) 
+                    const totalInputDays = getStats().totalDays;
+                    const percentage = totalInputDays > 0 
+                      ? Math.round((count / totalInputDays) * 100) 
                       : 0;
                     return { key, habit, count, percentage };
                   })
